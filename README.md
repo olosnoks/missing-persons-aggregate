@@ -224,14 +224,3 @@ output/missinginms-ingest.json
 ```
 
 `run_all.py` passes `OUTPUT_DIR` so individual scrapers can write into the shared aggregate output directory.
-
-## Next steps
-
-Planned improvements that fit this design:
-
-- fuzzy deduplication beyond strict composite keys
-- confidence scoring for merges
-- per-field provenance metadata
-- parser plugins for extra sources
-- validation reports for duplicate clusters
-- export targets such as SQLite, Parquet, or NDJSON
