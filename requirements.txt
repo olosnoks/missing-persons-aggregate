@@ -1,0 +1,2 @@
+# Add shared dependencies needed by the orchestrator or merge script here.
+# Each scraper's own requirements.txt handles its own deps.

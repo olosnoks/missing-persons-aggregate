@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+
+  missingsippi-ingest:
+    build:
+      context: ./scrapers/missingsippi-ingest
+    volumes:
+      - ./output:/app/output
+    environment:
+      - OUTPUT_DIR=/app/output
+
+  namus-ingest:
+    build:
+      context: ./scrapers/namus-ingest
+    volumes:
+      - ./output:/app/output
+    environment:
+      - OUTPUT_DIR=/app/output
+
+  charleyproject-ingest:
+    build:
+      context: ./scrapers/charleyproject-ingest
+    volumes:
+      - ./output:/app/output
+    environment:
+      - OUTPUT_DIR=/app/output
+
+  missinginms-ingest:
+    build:
+      context: ./scrapers/missinginms-ingest
+    volumes:
+      - ./output:/app/output
+    environment:
+      - OUTPUT_DIR=/app/output
+
+  # Run after all scrapers complete
+  merge:
+    image: python:3.12-slim
+    command: python /app/merge.py
+    volumes:
+      - .:/app
+    depends_on:
+      - missingsippi-ingest
+      - namus-ingest
+      - charleyproject-ingest
+      - missinginms-ingest

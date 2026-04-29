@@ -1,0 +1,15 @@
+[submodule "scrapers/missingsippi-ingest"]
+	path = scrapers/missingsippi-ingest
+	url = https://github.com/olosnoks/missingsippi-ingest.git
+
+[submodule "scrapers/namus-ingest"]
+	path = scrapers/namus-ingest
+	url = https://github.com/olosnoks/namus-ingest.git
+
+[submodule "scrapers/charleyproject-ingest"]
+	path = scrapers/charleyproject-ingest
+	url = https://github.com/olosnoks/charleyproject-ingest.git
+
+[submodule "scrapers/missinginms-ingest"]
+	path = scrapers/missinginms-ingest
+	url = https://github.com/olosnoks/missinginms-ingest.git
