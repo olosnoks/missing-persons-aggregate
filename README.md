@@ -27,11 +27,6 @@ git clone --recurse-submodules https://github.com/olosnoks/missing-persons-aggre
 cd missing-persons-aggregate
 ```
 
-### If already cloned without submodules
-```bash
-git submodule update --init --recursive
-```
-
 ### Run everything
 ```bash
 pip install -r requirements.txt
