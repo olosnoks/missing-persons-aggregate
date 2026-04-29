@@ -2,15 +2,17 @@
 
 Aggregate orchestrator for missing persons data sources.
 
-This repo pulls together multiple ingest repositories as Git submodules, runs their scrapers, and merges their exported JSON into a single canonical dataset while preserving all source-specific fields as raw blobs.
+This repo pulls together multiple ingest repositories as Git submodules, runs their scrapers from the aggregate repo, collects their SQLite data into per-source JSON, and merges the results into a single canonical dataset while preserving all source-specific fields as raw blobs.
 
 ## Goals
 
-- Run all scraper repos from one parent repository
-- Keep each scraper independent as a submodule
-- Merge records into a shared canonical schema
-- Preserve messy or source-specific structure instead of forcing everything into rigid columns
-- Retain full per-source payloads for downstream reprocessing and auditing
+- Run all scraper repos from one parent repository.
+- Keep each scraper independent as a submodule.
+- Execute each scraper using its own real CLI workflow.
+- Collect rows directly from each scraper SQLite database.
+- Merge records into a shared canonical schema.
+- Preserve messy or source-specific structure instead of forcing everything into rigid columns.
+- Retain full per-source payloads for downstream reprocessing and auditing.
 
 ## Repository Layout
 
@@ -23,10 +25,13 @@ missing-persons-aggregate/
 │   ├── charleyproject-ingest/
 │   └── missinginms-ingest/
 ├── output/
+│   ├── missingsippi-ingest.json
+│   ├── namus-ingest.json
+│   ├── charleyproject-ingest.json
+│   ├── missinginms-ingest.json
 │   └── merged.json
 ├── run_all.py
 ├── merge.py
-├── docker-compose.yml
 └── requirements.txt
 ```
 
@@ -54,51 +59,86 @@ If needed later:
 git submodule update --init --recursive
 ```
 
+Submodule definitions live in `.gitmodules`, which Git uses to store each submodule’s path and URL. [web:19][web:20]
+
+## Python environments
+
+Each scraper should have its own virtual environment inside its submodule directory.
+
+Typical setup inside each scraper repo:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Virtual environments isolate dependencies between projects, which matters here because each scraper is maintained independently. [web:125][web:129]
+
+## How aggregate execution works
+
+`run_all.py` does four things:
+
+1. Runs each scraper from inside its own submodule directory.
+2. Uses the scraper’s real CLI entrypoint, `python -m scraper.cli`.
+3. Reads each scraper’s SQLite database directly with Python’s `sqlite3` module.
+4. Writes a JSON array per source into `output/`, then runs `merge.py`. [web:140][web:151]
+
+This avoids depending on CSV exports for the merge pipeline and preserves all original database columns as raw JSON-friendly data.
+
+## CLI workflows used
+
+The aggregate repo follows the actual CLI structure implemented by each ingest repo.
+
+| Repo | Aggregate command flow |
+|---|---|
+| `missingsippi-ingest` | `seed` → `hydrate` → collect SQLite to JSON |
+| `namus-ingest` | `init-db` → `seed` → `hydrate` → `stats` → collect SQLite to JSON |
+| `charleyproject-ingest` | `init-db` → `seed` → `hydrate` → `stats` → collect SQLite to JSON |
+| `missinginms-ingest` | `seed` → `hydrate` → collect SQLite to JSON |
+
+These CLIs are exposed via package-style module execution, which is why the aggregate repo uses `python -m scraper.cli` instead of a top-level `main.py`. [page:1]
+
 ## Run
 
-Install aggregate-level dependencies:
+Install aggregate-level dependencies if you add any later:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Run all scrapers, then merge all available output:
+Run the aggregate workflow:
 
 ```bash
 python run_all.py
 ```
 
-Merged output is written to:
+Outputs written by the aggregate repo:
 
 ```text
+output/missingsippi-ingest.json
+output/namus-ingest.json
+output/charleyproject-ingest.json
+output/missinginms-ingest.json
 output/merged.json
 ```
 
-## Docker
+## SQLite collection
 
-Build and run the stack:
+The aggregate repo reads directly from these tables:
 
-```bash
-docker compose up --build
-```
+| Repo | SQLite file | Table |
+|---|---|---|
+| `missingsippi-ingest` | `data/missingsippi.sqlite3` | `missing_person_cases` |
+| `namus-ingest` | `data/namus.sqlite3` | `cases` |
+| `charleyproject-ingest` | `data/charley.sqlite3` | `cases` |
+| `missinginms-ingest` | `data/missinginms.sqlite3` | `missing_person_cases` |
 
-Note: service dependency order only guarantees startup order, not full readiness, so scraper containers should still be resilient to missing dependencies or delayed availability. [web:25][web:28]
-
-## Updating submodules
-
-Update all scraper repos to their latest tracked commits:
-
-```bash
-git submodule update --remote --merge
-git add .
-git commit -m "chore: update submodules"
-```
-
-Submodule definitions live in `.gitmodules`, which Git uses to store each submodule’s path and URL. [web:19][web:20]
+Using SQLite directly keeps all source columns available for later normalization and blob preservation. [web:151]
 
 ## Merge strategy
 
-`merge.py` now does schema-aware normalization for each known source before deduplication. [page:3]
+`merge.py` does schema-aware normalization for each known source before deduplication.
 
 Currently supported source normalizers:
 
@@ -172,20 +212,20 @@ Each merged record includes:
 
 This allows downstream consumers to:
 
-- reprocess records later with improved parsers
-- inspect source-specific fields
-- retain provenance
-- avoid data loss caused by over-normalization
+- Reprocess records later with improved parsers.
+- Inspect source-specific fields.
+- Retain provenance.
+- Avoid data loss caused by over-normalization.
 
 ## Deduplication
 
 Records are currently bucketed using a composite key based on:
 
-- normalized full name
-- date of birth
-- sex
+- Normalized full name
+- Date of birth
+- Sex
 
-This is intentionally pragmatic rather than perfect. Some sources are sparse, and not every source provides the same identity fields. The merge process then builds one canonical record from the grouped source entries. [page:3]
+This is intentionally pragmatic rather than perfect. Some sources are sparse, and not every source provides the same identity fields. The merge process then builds one canonical record from the grouped source entries.
 
 ## Source priority
 
@@ -196,31 +236,34 @@ When multiple sources provide conflicting values, canonical field selection curr
 3. `missingsippi-ingest`
 4. `charleyproject-ingest`
 
-This priority affects which top-level canonical value is selected, but all original source values remain available inside `source_data`. [page:3]
+This priority affects which top-level canonical value is selected, but all original source values remain available inside `source_data`.
 
 ## Source-specific notes
 
 ### NamUs
 
-NamUs is the richest structured source in the current stack. Its listing and detail payloads are preserved in the raw source blob so the full upstream API structure remains available. [page:3]
+NamUs is the richest structured source in the current stack. Its listing and detail payloads are preserved in the raw source blob so the full upstream API structure remains available.
 
 ### Charley Project
 
-Charley Project stores some fields as free text, including combined `height_weight`, so some canonical mappings are best-effort rather than fully structured. [page:3]
+Charley Project stores some fields as free text, including combined `height_weight`, so some canonical mappings are best-effort rather than fully structured.
 
 ### MissingSippi and MissingInMS
 
-These sources include raw field JSON blobs and HTML snapshots, which are preserved in the merged source data for auditability and later parsing improvements. [page:3]
+These sources include raw field JSON blobs and HTML snapshots, which are preserved in the merged source data for auditability and later parsing improvements.
 
-## Output assumptions
+## Updating submodules
 
-`merge.py` expects each source export file in `output/` to be a JSON array, typically named like:
+Update all scraper repos to their latest tracked commits:
 
-```text
-output/missingsippi-ingest.json
-output/namus-ingest.json
-output/charleyproject-ingest.json
-output/missinginms-ingest.json
+```bash
+git submodule update --remote --merge
+git add .
+git commit -m "chore: update submodules"
 ```
 
-`run_all.py` passes `OUTPUT_DIR` so individual scrapers can write into the shared aggregate output directory.
+## Notes
+
+- `run_all.py` uses subprocesses with per-repo working directories so each CLI runs in the environment and filesystem layout it expects. [web:140]
+- SQLite access is handled through Python’s standard `sqlite3` module. [web:151]
+- The aggregate repo no longer depends on per-repo CSV exports for merging.
